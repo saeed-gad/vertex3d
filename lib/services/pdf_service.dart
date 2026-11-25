@@ -51,10 +51,10 @@ class PdfService {
                 fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
                 color: color));
 
+    // الصفحة LTR دايماً، والعربي بنقلب ترتيب العناصر يدوياً (أضمن من الاعتماد على اتجاه الصفحة).
     pw.Widget row(List<pw.Widget> kids) => pw.Row(
-        textDirection: dir,
         crossAxisAlignment: pw.CrossAxisAlignment.center,
-        children: kids);
+        children: rtl ? kids.reversed.toList() : kids);
 
     final logo = co.logoBytes;
     final statusKey = {
@@ -85,7 +85,7 @@ class PdfService {
         pageTheme: pw.PageTheme(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(32),
-          textDirection: dir,
+          textDirection: pw.TextDirection.ltr,
           theme: pw.ThemeData.withFont(base: _regular!, bold: _bold!),
         ),
         build: (ctx) => [
