@@ -1,0 +1,103 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # يولّد مجلد android (الحزمة: com.invoicer.invoicer)
+      - name: Create Android scaffold
+        run: |
+          flutter create --org com.invoicer --platforms=android --project-name invoicer /tmp/scaffold
+          cp -r /tmp/scaffold/android ./android
+          sed -i 's/flutter\.minSdkVersion/23/' android/app/build.gradle* || true
+
+      # يولّد إعدادات Firebase من السر GOOGLE_SERVICES_JSON
+      - name: Generate Firebase config
+        env:
+          GSJ: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GSJ" ]; then echo "::error::Secret GOOGLE_SERVICES_JSON is missing"; exit 1; fi
+          printf '%s' "$GSJ" > google-services.json
+          python3 - <<'PY'
+          import json
+          j = json.load(open('google-services.json'))
+          pi = j['project_info']
+          c = j['client'][0]
+          api = c['api_key'][0]['current_key']
+          app = c['client_info']['mobilesdk_app_id']
+          web = ''
+          cands = list(c.get('oauth_client', []))
+          cands += c.get('services', {}).get('appinvite_service', {}).get('other_platform_oauth_client', [])
+          for o in cands:
+              if o.get('client_type') == 3:
+                  web = o['client_id']
+          opts = f"""import 'package:firebase_core/firebase_core.dart';
+
+          class DefaultFirebaseOptions {{
+            static const FirebaseOptions currentPlatform = FirebaseOptions(
+              apiKey: '{api}',
+              appId: '{app}',
+              messagingSenderId: '{pi['project_number']}',
+              projectId: '{pi['project_id']}',
+              storageBucket: '{pi.get('storage_bucket', '')}',
+            );
+          }}
+          """
+          open('lib/firebase_options.dart', 'w').write('\n'.join(l.lstrip() if False else l[10:] if l.startswith('          ') else l for l in opts.split('\n')))
+          open('lib/google_config.dart', 'w').write(f"const String kWebClientId = '{web}';\n")
+          print('web client id found:', bool(web))
+          PY
+          rm google-services.json
+
+      # مفتاح توقيع ثابت (عشان SHA-1 ما يتغيّرش كل مرة)
+      - name: Restore keystore
+        id: ks
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
+      - name: Create keystore if missing
+        if: steps.ks.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Save keystore
+        if: steps.ks.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
+      - name: Show SHA-1 (add it in Firebase)
+        run: |
+          echo "### SHA-1 للإضافة في Firebase" >> $GITHUB_STEP_SUMMARY
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA1|SHA256" >> $GITHUB_STEP_SUMMARY
+
+      - run: flutter pub get
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: invoicer-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
