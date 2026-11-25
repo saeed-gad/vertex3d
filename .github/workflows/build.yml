@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -104,6 +107,15 @@ jobs:
       - run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: invoicer-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Publish APK as GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          cp build/app/outputs/flutter-apk/app-release.apk invoicer.apk
+          gh release create "$TAG" invoicer.apk --title "Invoicer $TAG" --notes "APK build #${{ github.run_number }}"
