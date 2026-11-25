@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -27,6 +27,12 @@ jobs:
           flutter create --org com.invoicer --platforms=android --project-name invoicer /tmp/scaffold
           cp -r /tmp/scaffold/android ./android
           sed -i 's/flutter\.minSdkVersion/23/' android/app/build.gradle* || true
+          # تعطيل lintVital (بيكراش مع بعض إضافات Firebase)
+          if [ -f android/build.gradle.kts ]; then
+            printf '\nsubprojects {\n    tasks.configureEach {\n        if (name.startsWith("lintVital")) { enabled = false }\n    }\n}\n' >> android/build.gradle.kts
+          else
+            printf '\nsubprojects {\n    tasks.configureEach { t -> if (t.name.startsWith("lintVital")) { t.enabled = false } }\n}\n' >> android/build.gradle
+          fi
 
       # يولّد إعدادات Firebase من السر GOOGLE_SERVICES_JSON
       - name: Generate Firebase config
