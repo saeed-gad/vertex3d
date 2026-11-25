@@ -7,6 +7,7 @@ import '../services/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/logo_picker.dart';
+import '../widgets/update_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -221,6 +222,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ]),
           ),
+          const SizedBox(height: 14),
+          const UpdateCard(),
           const SizedBox(height: 20),
           FilledButton.icon(
             style: FilledButton.styleFrom(
@@ -232,7 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 12),
           Center(
-              child: Text('Invoicer 1.0.0',
+              child: Text('Invoicer',
                   style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant))),
         ],
       ),

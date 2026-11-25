@@ -6,6 +6,7 @@ import 'home_screen.dart';
 import 'invoice_form_screen.dart';
 import 'invoices_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/update_card.dart';
 
 class Shell extends StatefulWidget {
   const Shell({super.key});
@@ -15,6 +16,13 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   int _i = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => checkUpdateSilently(context));
+  }
 
   void goTo(int i) => setState(() => _i = i);
 
