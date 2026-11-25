@@ -195,7 +195,7 @@ class _InvoiceCard extends StatelessWidget {
                               MaterialPageRoute(
                                   builder: (_) => InvoiceFormScreen(existing: inv)));
                         }
-                        if (v == 'paid') app.setInvoiceStatus(inv.id, 'paid');
+                        if (v == 'paid') app.markPaid(inv);
                         if (v == 'delete' &&
                             await confirm(context, tr('confirmDelete'))) {
                           app.deleteInvoice(inv.id);

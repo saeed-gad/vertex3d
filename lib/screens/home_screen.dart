@@ -20,10 +20,10 @@ class HomeScreen extends StatelessWidget {
     final dark = isDark(context);
 
     final real = s.invoices.where((i) => i.display != DisplayStatus.draft);
-    final paid = s.sumFor(s.invoices, DisplayStatus.paid);
-    final pending = s.sumFor(s.invoices, DisplayStatus.pending);
-    final overdue = s.sumFor(s.invoices, DisplayStatus.overdue);
-    final total = paid + pending + overdue;
+    final paid = s.totalPaid;
+    final pending = s.dueFor(DisplayStatus.pending);
+    final overdue = s.dueFor(DisplayStatus.overdue);
+    final total = s.totalBilled;
     final pct = total == 0 ? 0 : (paid / total * 100).round();
     final recent = s.invoices.take(5).toList();
 

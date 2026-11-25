@@ -178,6 +178,11 @@ class InvoicePreviewScreen extends StatelessWidget {
                           fontSize: 20,
                           color: cs.primary)),
                 ]),
+                if (i.paidEff > 0) ...[
+                  const SizedBox(height: 8),
+                  kv(tr('paidAmount'), money(i.paidEff, cur)),
+                  kv(tr('amountDue'), money(i.due, cur)),
+                ],
                 if (i.notes.trim().isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Container(
@@ -234,7 +239,7 @@ class InvoicePreviewScreen extends StatelessWidget {
                 onPressed: st == DisplayStatus.paid
                     ? null
                     : () {
-                        app.setInvoiceStatus(i.id, 'paid');
+                        app.markPaid(i);
                         toast(context, tr('saved'));
                       },
                 icon: const Icon(Icons.done_all),

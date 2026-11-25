@@ -131,6 +131,26 @@ const Map<String, List<String>> _s = {
   'usd': ['دولار (USD)', 'US dollar (USD)'],
   'thanks': ['شكراً لتعاملكم معنا.', 'Thank you for your business.'],
   'whatsappMsg': ['فاتورة رقم %s من %s\nالإجمالي: %s', 'Invoice %s from %s\nTotal: %s'],
+  'discountPct': ['خصم %', 'Disc. %'],
+  'taxes': ['الضرائب', 'Taxes'],
+  'amount': ['المبلغ', 'Amount'],
+  'unitPrice': ['سعر الوحدة', 'Unit price'],
+  'invoiceTitle': ['الفاتورة', 'Invoice'],
+  'customerInvoiceDate': ['تاريخ فاتورة العميل', 'Invoice date'],
+  'dueDateLbl': ['تاريخ الاستحقاق', 'Due date'],
+  'untaxed': ['المبلغ دون الضريبة', 'Untaxed amount'],
+  'vatAt': ['قيمة مضافة %s%% في %s', 'VAT %s%% on %s'],
+  'totalLbl': ['الإجمالي', 'Total'],
+  'paidOn': ['تم الدفع في %s', 'Paid on %s'],
+  'amountDue': ['المبلغ المستحق', 'Amount due'],
+  'paymentRef': ['التواصل بشأن الدفع', 'Payment communication'],
+  'amountInWords': ['إجمالي المبلغ بالكلمات:', 'Total amount in words:'],
+  'page': ['الصفحة', 'Page'],
+  'country': ['الدولة', 'Country'],
+  'paidAmount': ['المبلغ المدفوع', 'Amount paid'],
+  'amountDueShort': ['المتبقي', 'Remaining'],
+  'nextNumber': ['رقم الفاتورة القادمة', 'Next invoice number'],
+  'prefixHint': ['مثال: INV/2026/', 'e.g. INV/2026/'],
   'error': ['حصل خطأ، حاول تاني', 'Something went wrong'],
   'weakPassword': ['كلمة المرور ضعيفة (6 حروف على الأقل)', 'Password too weak (min 6 chars)'],
   'badCreds': ['البريد أو كلمة المرور غير صحيحة', 'Wrong email or password'],
@@ -162,3 +182,9 @@ String money(double v, String currency) =>
 
 String fmtDate(DateTime d) =>
     intl.DateFormat('d MMM yyyy', Lang.code).format(d);
+
+String fmt2(double v) => intl.NumberFormat('#,##0.00', 'en').format(v);
+
+/// مبلغ بتنسيق الفاتورة المطبوعة: LE 12,700.00
+String pdfMoney(double v, String currency) =>
+    '${currency == 'USD' ? r'$' : 'LE'} ${fmt2(v)}';

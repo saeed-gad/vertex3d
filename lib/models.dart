@@ -16,7 +16,7 @@ double parseNum(String s) {
 }
 
 class Company {
-  final String name, phone, email, address, taxNumber, commercialReg;
+  final String name, phone, email, address, taxNumber, commercialReg, country;
   final String currency; // EGP | USD
   final String logoBase64;
   final String prefix;
@@ -33,9 +33,10 @@ class Company {
     this.address = '',
     this.taxNumber = '',
     this.commercialReg = '',
+    this.country = 'مصر',
     this.currency = 'EGP',
     this.logoBase64 = '',
-    this.prefix = 'INV-',
+    this.prefix = 'INV/',
     this.taxRate = 14,
     this.defaultNotes = '',
     this.lang = 'ar',
@@ -60,9 +61,10 @@ class Company {
         address: m['address'] ?? '',
         taxNumber: m['taxNumber'] ?? '',
         commercialReg: m['commercialReg'] ?? '',
+        country: m['country'] ?? 'مصر',
         currency: m['currency'] ?? 'EGP',
         logoBase64: m['logoBase64'] ?? '',
-        prefix: m['prefix'] ?? 'INV-',
+        prefix: m['prefix'] ?? 'INV/',
         taxRate: m['taxRate'] == null ? 14 : toD(m['taxRate']),
         defaultNotes: m['defaultNotes'] ?? '',
         lang: m['lang'] ?? 'ar',
@@ -78,6 +80,7 @@ class Company {
         'address': address,
         'taxNumber': taxNumber,
         'commercialReg': commercialReg,
+        'country': country,
         'currency': currency,
         'logoBase64': logoBase64,
         'prefix': prefix,
@@ -94,6 +97,7 @@ class Company {
     String? address,
     String? taxNumber,
     String? commercialReg,
+    String? country,
     String? currency,
     String? logoBase64,
     String? prefix,
@@ -109,6 +113,7 @@ class Company {
         address: address ?? this.address,
         taxNumber: taxNumber ?? this.taxNumber,
         commercialReg: commercialReg ?? this.commercialReg,
+        country: country ?? this.country,
         currency: currency ?? this.currency,
         logoBase64: logoBase64 ?? this.logoBase64,
         prefix: prefix ?? this.prefix,
@@ -120,7 +125,7 @@ class Company {
       );
 
   String get nextInvoiceNumber =>
-      '$prefix${nextNumber.toString().padLeft(4, '0')}';
+      '$prefix${nextNumber.toString().padLeft(5, '0')}';
 }
 
 class Client {
@@ -169,14 +174,19 @@ class Client {
 
 class InvoiceItem {
   final String description;
-  final double qty, price;
-  InvoiceItem(this.description, this.qty, this.price);
-  double get total => qty * price;
+  final double qty, price, discountPct;
+  InvoiceItem(this.description, this.qty, this.price, [this.discountPct = 0]);
+  double get gross => qty * price;
+  double get total => gross * (1 - discountPct / 100);
 
-  factory InvoiceItem.fromMap(Map<String, dynamic> m) =>
-      InvoiceItem(m['description'] ?? '', toD(m['qty']), toD(m['price']));
-  Map<String, dynamic> toMap() =>
-      {'description': description, 'qty': qty, 'price': price};
+  factory InvoiceItem.fromMap(Map<String, dynamic> m) => InvoiceItem(
+      m['description'] ?? '', toD(m['qty']), toD(m['price']), toD(m['discountPct']));
+  Map<String, dynamic> toMap() => {
+        'description': description,
+        'qty': qty,
+        'price': price,
+        'discountPct': discountPct
+      };
 }
 
 enum DisplayStatus { draft, pending, paid, overdue }
@@ -189,6 +199,8 @@ class Invoice {
   final double discount, taxRate;
   final String notes;
   final String status; // draft | pending | paid
+  final double paidAmount;
+  final DateTime? paidDate;
   final DateTime createdAt;
 
   Invoice({
@@ -205,6 +217,8 @@ class Invoice {
     this.taxRate = 0,
     this.notes = '',
     this.status = 'draft',
+    this.paidAmount = 0,
+    this.paidDate,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -213,9 +227,15 @@ class Invoice {
   double get tax => taxable * taxRate / 100;
   double get total => taxable + tax;
 
+  /// المدفوع الفعلي (الفاتورة المحددة "مدفوعة" تُعتبر مسددة بالكامل)
+  double get paidEff => status == 'paid' ? total : paidAmount.clamp(0, total).toDouble();
+  double get due => status == 'draft' ? total : (total - paidEff).clamp(0, double.infinity).toDouble();
+
   DisplayStatus get display {
-    if (status == 'paid') return DisplayStatus.paid;
     if (status == 'draft') return DisplayStatus.draft;
+    if (status == 'paid' || (total > 0 && paidAmount >= total)) {
+      return DisplayStatus.paid;
+    }
     final today = DateTime.now();
     final d0 = DateTime(today.year, today.month, today.day);
     return dueDate.isBefore(d0) ? DisplayStatus.overdue : DisplayStatus.pending;
@@ -241,6 +261,8 @@ class Invoice {
       taxRate: toD(m['taxRate']),
       notes: m['notes'] ?? '',
       status: m['status'] ?? 'draft',
+      paidAmount: toD(m['paidAmount']),
+      paidDate: m['paidDate'] is Timestamp ? (m['paidDate'] as Timestamp).toDate() : null,
       createdAt: dt(m['createdAt']),
     );
   }
@@ -258,6 +280,8 @@ class Invoice {
         'taxRate': taxRate,
         'notes': notes,
         'status': status,
+        'paidAmount': paidAmount,
+        'paidDate': paidDate == null ? null : Timestamp.fromDate(paidDate!),
         'total': total,
         'createdAt': Timestamp.fromDate(createdAt),
       };
@@ -276,6 +300,8 @@ class Invoice {
         taxRate: taxRate,
         notes: notes,
         status: status ?? this.status,
+        paidAmount: paidAmount,
+        paidDate: paidDate,
         createdAt: createdAt,
       );
 }

@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../l10n.dart';
 import '../models.dart';
 import '../widgets/common.dart';
+import 'number_words.dart';
 
 class PdfService {
   static pw.Font? _regular, _bold;
@@ -21,27 +22,52 @@ class PdfService {
     _bold ??= pw.Font.ttf(await rootBundle.load('assets/fonts/pdf_bold.ttf'));
   }
 
-  /// يبني ملف PDF للفاتورة (بالعربي أو الإنجليزي حسب لغة التطبيق).
+  static const _purple = PdfColor.fromInt(0xFF5C4370);
+  static const _ink = PdfColor.fromInt(0xFF1E1E28);
+  static const _muted = PdfColor.fromInt(0xFF6B6F7B);
+  static const _line = PdfColor.fromInt(0xFF3A3A48);
+  static const _shade = PdfColor.fromInt(0xFFF1F2F6);
+  static const _decor = PdfColor.fromInt(0xFFD8D3DE);
+
+  /// الخطوط الزخرفية أعلى اليمين وأسفل الصفحة (زي القالب القديم).
+  static void _paintDecor(PdfGraphics c, PdfPoint s) {
+    final w = s.x, h = s.y;
+    c
+      ..setStrokeColor(_decor)
+      ..setLineWidth(0.5);
+    for (var i = 0; i < 14; i++) {
+      final sx = w * 0.38 + i * w * 0.022;
+      c
+        ..moveTo(sx, h)
+        ..curveTo(sx + w * 0.02, h - h * 0.05, w * 0.80 + i * w * 0.01,
+            h - h * 0.06 - i * h * 0.004, w, h - h * 0.10 - i * h * 0.011)
+        ..strokePath();
+    }
+    for (var i = 0; i < 12; i++) {
+      final y = h * 0.075 - i * h * 0.0055;
+      c
+        ..moveTo(0, y)
+        ..curveTo(w * 0.3, y + h * 0.03, w * 0.65, y - h * 0.025, w, y + h * 0.02)
+        ..strokePath();
+    }
+  }
+
+  /// يبني ملف PDF بنفس تصميم الفاتورة القديمة.
   static Future<Uint8List> build(Invoice inv, Company co) async {
     await _loadFonts();
     final rtl = Lang.isAr;
     final dir = rtl ? pw.TextDirection.rtl : pw.TextDirection.ltr;
-    final start = rtl ? pw.TextAlign.right : pw.TextAlign.left;
-    final end = rtl ? pw.TextAlign.left : pw.TextAlign.right;
-    final crossStart =
-        rtl ? pw.CrossAxisAlignment.end : pw.CrossAxisAlignment.start;
-    final crossEnd =
-        rtl ? pw.CrossAxisAlignment.start : pw.CrossAxisAlignment.end;
+    final start = rtl ? pw.TextAlign.right : pw.TextAlign.left; // بداية السطر
+    final endA = rtl ? pw.TextAlign.left : pw.TextAlign.right; // نهاية السطر
+    final cross = rtl ? pw.CrossAxisAlignment.end : pw.CrossAxisAlignment.start;
+    String m(double v) => pdfMoney(v, co.currency);
 
-    const navy = PdfColor.fromInt(0xFF00236F);
-    const grey = PdfColor.fromInt(0xFF666B78);
-    const light = PdfColor.fromInt(0xFFF1F3F8);
-    final cur = co.currency;
+    List<T> vis<T>(List<T> l) => rtl ? l.reversed.toList() : l;
 
     pw.Widget t(String s,
             {double size = 10,
             bool bold = false,
-            PdfColor? color,
+            PdfColor color = _ink,
             pw.TextAlign? align}) =>
         pw.Text(s,
             textDirection: dir,
@@ -51,172 +77,211 @@ class PdfService {
                 fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
                 color: color));
 
-    // الصفحة LTR دايماً، والعربي بنقلب ترتيب العناصر يدوياً (أضمن من الاعتماد على اتجاه الصفحة).
-    pw.Widget row(List<pw.Widget> kids) => pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.center,
-        children: rtl ? kids.reversed.toList() : kids);
+    pw.Widget cellBox(pw.Widget child, {PdfColor? bg}) => pw.Container(
+        color: bg,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+        child: child);
+
+    pw.Widget numCell(String s, {bool bold = false, PdfColor color = _ink, PdfColor? bg}) =>
+        cellBox(
+            pw.Text(s,
+                textDirection: pw.TextDirection.ltr,
+                textAlign: pw.TextAlign.left,
+                style: pw.TextStyle(
+                    fontSize: 10,
+                    fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                    color: color)),
+            bg: bg);
 
     final logo = co.logoBytes;
-    final statusKey = {
-      DisplayStatus.paid: 'paid',
-      DisplayStatus.pending: 'pending',
-      DisplayStatus.overdue: 'overdue',
-      DisplayStatus.draft: 'draft',
-    }[inv.display]!;
+    final title = '${tr('invoiceTitle')} ${inv.number}';
 
-    final doc = pw.Document(title: inv.number, author: co.name);
+    // ---------------- جدول البنود
+    // الترتيب المنطقي (LTR): وصف | كمية | سعر | خصم | ضرائب | مبلغ
+    final colFlex = [5.0, 1.3, 2.0, 1.4, 1.4, 2.6];
+    final visFlex = vis(colFlex);
+    final widths = <int, pw.TableColumnWidth>{
+      for (var i = 0; i < visFlex.length; i++) i: pw.FlexColumnWidth(visFlex[i])
+    };
+    final taxCell = inv.taxRate > 0 ? '${fmtNum(inv.taxRate)}%' : '';
 
-    pw.Widget cell(String s, int flex,
-            {bool head = false, pw.TextAlign? align}) =>
-        pw.Expanded(
-          flex: flex,
-          child: pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-            child: t(s,
-                size: head ? 9.5 : 10,
-                bold: head,
-                color: head ? PdfColors.white : null,
-                align: align),
-          ),
+    pw.TableRow headerRow() => pw.TableRow(
+          repeat: true,
+          children: vis<pw.Widget>([
+            cellBox(t(tr('description'))),
+            cellBox(t(tr('qty'))),
+            cellBox(t(tr('unitPrice'))),
+            cellBox(t(tr('discountPct'))),
+            cellBox(t(tr('taxes'))),
+            cellBox(t(tr('amount')), bg: _shade),
+          ]),
         );
 
+    pw.TableRow itemRow(InvoiceItem i) => pw.TableRow(
+          children: vis<pw.Widget>([
+            cellBox(t(i.description)),
+            numCell(fmt2(i.qty)),
+            numCell(fmt2(i.price)),
+            numCell(fmt2(i.discountPct)),
+            numCell(taxCell),
+            numCell(m(i.total), bg: _shade),
+          ]),
+        );
+
+    final itemsTable = pw.Table(
+      border: pw.TableBorder.all(color: _line, width: 0.6),
+      columnWidths: widths,
+      defaultVerticalAlignment: pw.TableCellVerticalAlignment.full,
+      children: [headerRow(), ...inv.items.map(itemRow)],
+    );
+
+    // ---------------- مربع الإجماليات
+    pw.TableRow totalRow(String label, String value,
+            {bool bold = false, bool shade = false, PdfColor vColor = _ink}) =>
+        pw.TableRow(
+          decoration: shade ? const pw.BoxDecoration(color: _shade) : null,
+          children: vis<pw.Widget>([
+            cellBox(t(label, bold: bold)),
+            cellBox(t(value, bold: bold, color: vColor, align: endA)),
+          ]),
+        );
+
+    final totalsRows = <pw.TableRow>[
+      if (inv.discount > 0) totalRow(tr('discount'), '- ${m(inv.discount)}'),
+      totalRow(tr('untaxed'), m(inv.taxable)),
+      totalRow(tr('vatAt', [fmtNum(inv.taxRate), m(inv.taxable)]), m(inv.tax),
+          shade: true),
+      totalRow(tr('totalLbl'), m(inv.total),
+          bold: true, vColor: _purple),
+      if (inv.paidEff > 0)
+        totalRow(tr('paidOn', [fmtDate(inv.paidDate ?? inv.date)]),
+            m(inv.paidEff)),
+      totalRow(tr('amountDue'), m(inv.due), bold: true),
+    ];
+
+    final totalsBox = pw.SizedBox(
+      width: 280,
+      child: pw.Table(
+        border: pw.TableBorder.all(color: _line, width: 0.6),
+        columnWidths: {
+          for (var i = 0; i < 2; i++) i: const pw.FlexColumnWidth(1)
+        },
+        children: totalsRows,
+      ),
+    );
+
+    // الترتيب المنطقي LTR: [مرجع الدفع (يتمدد) | الإجماليات] -> العربي بينعكس
+    final summaryRow = pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: vis<pw.Widget>([
+        pw.Expanded(
+          child: pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 14, left: 8, right: 8),
+            child: pw.Column(crossAxisAlignment: cross, children: [
+              t('${tr('paymentRef')}: ${inv.number}', bold: true),
+            ]),
+          ),
+        ),
+        totalsBox,
+      ]),
+    );
+
+    // ---------------- تاريخين
+    pw.Widget dateBox(String label, DateTime d) => pw.SizedBox(
+          width: 185,
+          child: pw.Column(crossAxisAlignment: cross, children: [
+            t(label, bold: true),
+            pw.SizedBox(height: 3),
+            t(intlDate(d)),
+          ]),
+        );
+    final datesRow = pw.Row(
+      mainAxisAlignment:
+          rtl ? pw.MainAxisAlignment.end : pw.MainAxisAlignment.start,
+      children: vis<pw.Widget>([
+        dateBox(tr('customerInvoiceDate'), inv.date),
+        pw.SizedBox(width: 10),
+        dateBox(tr('dueDateLbl'), inv.dueDate),
+      ]),
+    );
+
+    final doc = pw.Document(title: inv.number, author: co.name);
     doc.addPage(
       pw.MultiPage(
         pageTheme: pw.PageTheme(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
+          margin: const pw.EdgeInsets.fromLTRB(36, 34, 36, 40),
           textDirection: pw.TextDirection.ltr,
           theme: pw.ThemeData.withFont(base: _regular!, bold: _bold!),
+          buildBackground: (ctx) => pw.FullPage(
+            ignoreMargins: true,
+            child: pw.CustomPaint(
+              size: PdfPoint(PdfPageFormat.a4.width, PdfPageFormat.a4.height),
+              painter: _paintDecor,
+            ),
+          ),
+        ),
+        footer: (ctx) => pw.Align(
+          alignment: rtl ? pw.Alignment.centerLeft : pw.Alignment.centerRight,
+          child: t('${tr('page')} ${ctx.pageNumber} / ${ctx.pagesCount}',
+              size: 9, color: _muted),
         ),
         build: (ctx) => [
-          // ---- رأس الفاتورة
-          row([
-            if (logo != null) ...[
-              pw.Container(
-                width: 64,
-                height: 64,
-                child: pw.Image(pw.MemoryImage(logo), fit: pw.BoxFit.contain),
-              ),
-              pw.SizedBox(width: 12),
+          // رأس: اللوجو يسار والدولة يمين
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              logo != null
+                  ? pw.Container(
+                      width: 150,
+                      height: 46,
+                      alignment: pw.Alignment.centerLeft,
+                      child: pw.Image(pw.MemoryImage(logo),
+                          fit: pw.BoxFit.contain,
+                          alignment: pw.Alignment.centerLeft),
+                    )
+                  : pw.Text(co.name,
+                      textDirection: dir,
+                      style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: _purple)),
+              if (co.country.isNotEmpty) t(co.country, color: _ink),
             ],
-            pw.Expanded(
-              child: pw.Column(crossAxisAlignment: crossStart, children: [
-                t(co.name, size: 18, bold: true, color: navy),
-                if (co.address.isNotEmpty) t(co.address, color: grey),
-                if (co.phone.isNotEmpty) t(co.phone, color: grey),
-                if (co.email.isNotEmpty) t(co.email, color: grey),
-                if (co.taxNumber.isNotEmpty)
-                  t('${tr('taxNumber')}: ${co.taxNumber}', color: grey),
-              ]),
-            ),
-            pw.Column(crossAxisAlignment: crossEnd, children: [
-              t(tr('taxInvoice'), size: 22, bold: true, color: navy, align: end),
-              pw.SizedBox(height: 4),
-              t(inv.number, size: 12, bold: true, align: end),
-              pw.SizedBox(height: 2),
-              t(tr(statusKey), color: grey, align: end),
-            ]),
-          ]),
-          pw.SizedBox(height: 16),
-          pw.Divider(color: navy, thickness: 1.5),
-          pw.SizedBox(height: 10),
-
-          // ---- العميل والتواريخ
-          row([
-            pw.Expanded(
-              child: pw.Container(
-                padding: const pw.EdgeInsets.all(10),
-                decoration: pw.BoxDecoration(
-                    color: light, borderRadius: pw.BorderRadius.circular(6)),
-                child: pw.Column(crossAxisAlignment: crossStart, children: [
-                  t(tr('billTo'), color: grey, size: 9),
-                  pw.SizedBox(height: 3),
-                  t(inv.clientName, bold: true, size: 12),
-                  if (inv.clientAddress.isNotEmpty) t(inv.clientAddress),
-                  if (inv.clientPhone.isNotEmpty) t(inv.clientPhone),
-                ]),
-              ),
-            ),
-            pw.SizedBox(width: 12),
-            pw.Expanded(
-              child: pw.Container(
-                padding: const pw.EdgeInsets.all(10),
-                decoration: pw.BoxDecoration(
-                    color: light, borderRadius: pw.BorderRadius.circular(6)),
-                child: pw.Column(crossAxisAlignment: crossStart, children: [
-                  t(tr('issueDate'), color: grey, size: 9),
-                  t(fmtDate(inv.date), bold: true),
-                  pw.SizedBox(height: 6),
-                  t(tr('dueDate'), color: grey, size: 9),
-                  t(fmtDate(inv.dueDate), bold: true),
-                ]),
-              ),
-            ),
-          ]),
-          pw.SizedBox(height: 16),
-
-          // ---- جدول البنود
-          pw.Container(
-            color: navy,
-            child: row([
-              cell(tr('statement'), 5, head: true),
-              cell(tr('qty'), 1, head: true, align: pw.TextAlign.center),
-              cell(tr('price'), 2, head: true, align: end),
-              cell(tr('total'), 2, head: true, align: end),
-            ]),
           ),
-          ...inv.items.map((i) => pw.Container(
-                decoration: const pw.BoxDecoration(
-                    border: pw.Border(
-                        bottom: pw.BorderSide(color: PdfColors.grey300))),
-                child: row([
-                  cell(i.description, 5),
-                  cell(fmtNum(i.qty), 1, align: pw.TextAlign.center),
-                  cell(fmtNum(i.price), 2, align: end),
-                  cell(fmtNum(i.total), 2, align: end),
-                ]),
-              )),
+          pw.SizedBox(height: 62),
+          pw.Center(child: t(title, size: 22, color: _purple, align: pw.TextAlign.center)),
           pw.SizedBox(height: 14),
-
-          // ---- الإجماليات
           pw.Align(
             alignment:
-                rtl ? pw.Alignment.centerLeft : pw.Alignment.centerRight,
-            child: pw.SizedBox(
-              width: 230,
-              child: pw.Column(children: [
-                _totalRow(t, row, tr('subtotal'), money(inv.subtotal, cur), end),
-                if (inv.discount > 0)
-                  _totalRow(
-                      t, row, tr('discount'), '- ${money(inv.discount, cur)}', end),
-                _totalRow(
-                    t,
-                    row,
-                    '${tr('tax')} (${fmtNum(inv.taxRate)}%)',
-                    money(inv.tax, cur),
-                    end),
-                pw.Divider(color: navy),
-                _totalRow(t, row, tr('grandTotal'), money(inv.total, cur), end,
-                    big: true),
-              ]),
-            ),
+                rtl ? pw.Alignment.centerRight : pw.Alignment.centerLeft,
+            child: pw.Column(crossAxisAlignment: cross, children: [
+              t(inv.clientName, size: 11, bold: true),
+              if (inv.clientAddress.isNotEmpty)
+                t(inv.clientAddress, size: 9, color: _muted),
+              if (inv.clientPhone.isNotEmpty)
+                pw.Text(inv.clientPhone,
+                    textDirection: pw.TextDirection.ltr,
+                    style: const pw.TextStyle(fontSize: 9, color: _muted)),
+            ]),
           ),
-
-          // ---- الملاحظات
+          pw.SizedBox(height: 16),
+          datesRow,
+          pw.SizedBox(height: 14),
+          itemsTable,
+          summaryRow,
+          if (rtl) ...[
+            pw.SizedBox(height: 16),
+            t(tr('amountInWords'), size: 11),
+            pw.SizedBox(height: 2),
+            t(amountInWordsAr(inv.total, co.currency), size: 9, color: _muted),
+          ],
           if (inv.notes.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 20),
-            pw.Container(
-              width: double.infinity,
-              padding: const pw.EdgeInsets.all(10),
-              decoration: pw.BoxDecoration(
-                  color: const PdfColor.fromInt(0xFFFFF4E8),
-                  borderRadius: pw.BorderRadius.circular(6)),
-              child: pw.Column(crossAxisAlignment: crossStart, children: [
-                t(tr('notes'), bold: true),
-                pw.SizedBox(height: 3),
-                t(inv.notes),
-              ]),
-            ),
+            pw.SizedBox(height: 16),
+            t(tr('notes'), bold: true, size: 10),
+            pw.SizedBox(height: 2),
+            t(inv.notes, size: 9, color: _muted),
           ],
         ],
       ),
@@ -224,23 +289,8 @@ class PdfService {
     return doc.save();
   }
 
-  static pw.Widget _totalRow(
-      pw.Widget Function(String,
-              {double size, bool bold, PdfColor? color, pw.TextAlign? align})
-          t,
-      pw.Widget Function(List<pw.Widget>) row,
-      String label,
-      String value,
-      pw.TextAlign end,
-      {bool big = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 3),
-      child: row([
-        pw.Expanded(child: t(label, size: big ? 12 : 10, bold: big)),
-        t(value, size: big ? 13 : 10, bold: big, align: end),
-      ]),
-    );
-  }
+  static String intlDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   // ------------------------------------------------------------ إجراءات
 
@@ -253,8 +303,7 @@ class PdfService {
     return f;
   }
 
-  /// يولّد الـ PDF ويفتح قائمة المشاركة. لو [whatsapp] فالرسالة المصاحبة
-  /// بتكون جاهزة وتختار واتساب من القائمة (واتساب بيطلب اختيار الجهة بإيدك).
+  /// يولّد الـ PDF ويفتح قائمة المشاركة (اختار واتساب من القائمة).
   static Future<void> share(BuildContext context, Invoice inv, Company co) async {
     toast(context, tr('preparingPdf'));
     try {

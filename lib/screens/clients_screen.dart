@@ -14,7 +14,7 @@ double clientOwed(AppState s, String clientId) => s.invoices
         i.clientId == clientId &&
         (i.display == DisplayStatus.pending ||
             i.display == DisplayStatus.overdue))
-    .fold(0.0, (a, i) => a + i.total);
+    .fold(0.0, (a, i) => a + i.due);
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({super.key});
@@ -49,7 +49,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
         .where((i) =>
             i.display == DisplayStatus.pending ||
             i.display == DisplayStatus.overdue)
-        .fold(0.0, (a, i) => a + i.total);
+        .fold(0.0, (a, i) => a + i.due);
 
     return Scaffold(
       appBar: AppBar(

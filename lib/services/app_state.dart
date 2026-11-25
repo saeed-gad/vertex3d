@@ -157,9 +157,10 @@ class AppState extends ChangeNotifier {
   // بعد تأكيد السيرفر، وده بيعلّق الواجهة لو النت فاصل. الكتابة بتتسجل
   // محلياً فوراً وبتترفع لوحدها لما النت يرجع.
 
-  void saveCompany(Company c, {bool first = false}) {
+  void saveCompany(Company c, {bool first = false, int? nextNumber}) {
     final data = c.toMap();
     if (first) data['nextNumber'] = 1;
+    if (nextNumber != null) data['nextNumber'] = nextNumber;
     _userDoc.set(data, SetOptions(merge: true)).catchError((_) {});
   }
 
@@ -192,6 +193,16 @@ class AppState extends ChangeNotifier {
       .doc(id)
       .update({'status': status}).catchError((_) {});
 
+  /// تحديد الفاتورة كمدفوعة بالكامل (المدفوع = الإجمالي، التاريخ = الآن)
+  void markPaid(Invoice inv) => _userDoc
+      .collection('invoices')
+      .doc(inv.id)
+      .update({
+        'status': 'paid',
+        'paidAmount': inv.total,
+        'paidDate': Timestamp.now(),
+      }).catchError((_) {});
+
   void deleteInvoice(String id) =>
       _userDoc.collection('invoices').doc(id).delete().catchError((_) {});
 
@@ -211,8 +222,17 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  double sumFor(Iterable<Invoice> list, DisplayStatus s) => list
+  /// إجمالي المبالغ المستحقة لفواتير بحالة معينة (المتبقي بعد الدفعات)
+  double dueFor(DisplayStatus s) => invoices
       .where((i) => i.display == s)
+      .fold(0.0, (a, i) => a + i.due);
+
+  double get totalPaid => invoices
+      .where((i) => i.display != DisplayStatus.draft)
+      .fold(0.0, (a, i) => a + i.paidEff);
+
+  double get totalBilled => invoices
+      .where((i) => i.display != DisplayStatus.draft)
       .fold(0.0, (a, i) => a + i.total);
 
   @override

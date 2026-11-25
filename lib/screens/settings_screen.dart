@@ -16,7 +16,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _name, _phone, _email, _address, _tax, _reg,
-      _prefix, _vat, _notes;
+      _prefix, _vat, _notes, _country, _next;
   late String _logo;
 
   @override
@@ -32,12 +32,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _prefix = TextEditingController(text: c.prefix);
     _vat = TextEditingController(text: fmtNum(c.taxRate));
     _notes = TextEditingController(text: c.defaultNotes);
+    _country = TextEditingController(text: c.country);
+    _next = TextEditingController(text: '${c.nextNumber}');
     _logo = c.logoBase64;
   }
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _email, _address, _tax, _reg, _prefix, _vat, _notes]) {
+    for (final c in [_name, _phone, _email, _address, _tax, _reg, _prefix, _vat, _notes, _country, _next]) {
       c.dispose();
     }
     super.dispose();
@@ -59,8 +61,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       prefix: _prefix.text.trim(),
       taxRate: parseNum(_vat.text),
       defaultNotes: _notes.text.trim(),
+      country: _country.text.trim(),
       logoBase64: _logo,
-    ));
+    ), nextNumber: () {
+      final n = int.tryParse(_next.text.trim());
+      return (n != null && n > 0 && n != app.company!.nextNumber) ? n : null;
+    }());
     FocusScope.of(context).unfocus();
     toast(context, tr('saved'));
   }
@@ -144,6 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _field(tr('email'), _email,
                   type: TextInputType.emailAddress, ltr: true),
               _field(tr('address'), _address, lines: 2),
+              _field(tr('country'), _country),
               _field(tr('commercialReg'), _reg, type: TextInputType.number, ltr: true),
               _field(tr('taxNumber'), _tax, type: TextInputType.number, ltr: true),
             ]),
@@ -170,6 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 14),
               _field(tr('prefix'), _prefix, ltr: true),
+              _field(tr('nextNumber'), _next, type: TextInputType.number, ltr: true),
               _field(tr('defaultTax'), _vat,
                   type: const TextInputType.numberWithOptions(decimal: true)),
               _field(tr('defaultNotes'), _notes, lines: 4),

@@ -12,18 +12,22 @@ class _ItemCtl {
   final desc = TextEditingController();
   final qty = TextEditingController(text: '1');
   final price = TextEditingController();
+  final disc = TextEditingController(text: '0');
   _ItemCtl([InvoiceItem? i]) {
     if (i != null) {
       desc.text = i.description;
       qty.text = fmtNum(i.qty).replaceAll(',', '');
       price.text = fmtNum(i.price).replaceAll(',', '');
+      disc.text = fmtNum(i.discountPct).replaceAll(',', '');
     }
   }
-  double get total => parseNum(qty.text) * parseNum(price.text);
+  double get total =>
+      parseNum(qty.text) * parseNum(price.text) * (1 - parseNum(disc.text) / 100);
   void dispose() {
     desc.dispose();
     qty.dispose();
     price.dispose();
+    disc.dispose();
   }
 }
 
@@ -41,6 +45,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   final _items = <_ItemCtl>[];
   final _discount = TextEditingController(text: '0');
   final _taxRate = TextEditingController();
+  final _paid = TextEditingController(text: '0');
   final _notes = TextEditingController();
 
   bool get _editing => widget.existing != null;
@@ -58,6 +63,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       _items.addAll(e.items.map((i) => _ItemCtl(i)));
       _discount.text = fmtNum(e.discount).replaceAll(',', '');
       _taxRate.text = fmtNum(e.taxRate);
+      _paid.text = fmtNum(e.paidAmount).replaceAll(',', '');
       _notes.text = e.notes;
     } else {
       _number = co.nextInvoiceNumber;
@@ -76,6 +82,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     }
     _discount.dispose();
     _taxRate.dispose();
+    _paid.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -85,6 +92,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       (_subtotal - parseNum(_discount.text)).clamp(0, double.infinity);
   double get _tax => _taxable * parseNum(_taxRate.text) / 100;
   double get _total => _taxable + _tax;
+  double get _paidAmt => parseNum(_paid.text).clamp(0, _total).toDouble();
 
   Future<void> _pickDate(bool due) async {
     final d = await showDatePicker(
@@ -112,8 +120,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     }
     final items = _items
         .where((i) => i.desc.text.trim().isNotEmpty)
-        .map((i) => InvoiceItem(
-            i.desc.text.trim(), parseNum(i.qty.text), parseNum(i.price.text)))
+        .map((i) => InvoiceItem(i.desc.text.trim(), parseNum(i.qty.text),
+            parseNum(i.price.text), parseNum(i.disc.text)))
         .toList();
     if (items.isEmpty) {
       toast(context, tr('addAnItem'));
@@ -140,6 +148,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       taxRate: parseNum(_taxRate.text),
       notes: _notes.text.trim(),
       status: status,
+      paidAmount: _paidAmt,
+      paidDate: _paidAmt > 0 ? (e?.paidDate ?? DateTime.now()) : null,
       createdAt: e?.createdAt,
     );
     final id = app.saveInvoice(inv, isNew: !_editing);
@@ -165,6 +175,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                       taxRate: inv.taxRate,
                       notes: inv.notes,
                       status: inv.status,
+                      paidAmount: inv.paidAmount,
+                      paidDate: inv.paidDate,
                       createdAt: inv.createdAt))));
     }
   }
@@ -308,6 +320,22 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                         fontSize: 22,
                         color: cs.primary)),
               ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: Text(tr('paidAmount'))),
+                SizedBox(
+                  width: 130,
+                  child: TextField(
+                    controller: _paid,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              _line(tr('amountDueShort'), money(_total - _paidAmt, cur)),
             ]),
           ),
           const SizedBox(height: 14),
@@ -422,18 +450,22 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            flex: 3,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                  color: cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(12)),
-              child: FittedBox(
-                  child: Text(fmtNum(it.total),
-                      style: const TextStyle(fontWeight: FontWeight.w800))),
+            flex: 2,
+            child: TextField(
+              controller: it.disc,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              textAlign: TextAlign.center,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                  labelText: tr('discountPct'), fillColor: cs.surface),
             ),
           ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: Text(tr('total'), style: TextStyle(color: cs.onSurfaceVariant))),
+          Text(money(it.total, cur),
+              style: const TextStyle(fontWeight: FontWeight.w800)),
         ]),
       ]),
     );
