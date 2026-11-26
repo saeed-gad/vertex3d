@@ -1,9 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // كل مستخدم يقرأ ويكتب بياناته هو بس
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
     }
+
+    // بيانات الشركة (مستند المستخدم نفسه)
+    match /users/{uid} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'name','phone','email','address','taxNumber','commercialReg','country',
+          'currency','logoBase64','prefix','taxRate','defaultNotes','lang','dark',
+          'nextNumber'])
+        && request.resource.data.get('name', '').size() <= 200
+        && request.resource.data.get('logoBase64', '').size() <= 600000;
+      allow delete: if false;
+    }
+
+    // العملاء
+    match /users/{uid}/clients/{id} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly(
+          ['name','countryCode','phone','email','address'])
+        && request.resource.data.get('name', '').size() <= 200;
+    }
+
+    // الفواتير
+    match /users/{uid}/invoices/{id} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'number','clientId','clientName','clientPhone','clientAddress','date',
+          'dueDate','items','discount','taxRate','notes','status','paidAmount',
+          'paidDate','total','createdAt'])
+        && request.resource.data.get('items', []).size() <= 300
+        && request.resource.data.get('notes', '').size() <= 5000;
+    }
+
+    // أي مسار تاني ممنوع
   }
 }
