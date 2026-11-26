@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/logo_picker.dart';
 import '../widgets/update_card.dart';
+import '../services/app_lock.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -221,6 +222,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => app.saveCompany(co.copyWith(dark: v)),
               ),
             ]),
+          ),
+          _title(tr('security')),
+          SectionCard(
+            child: Builder(builder: (context) {
+              final lock = context.watch<AppLock>();
+              return SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.lock_outline),
+                title: Text(tr('appLock'),
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(tr('appLockSub'), style: const TextStyle(fontSize: 12)),
+                value: lock.enabled,
+                onChanged: (v) async {
+                  final err = await lock.setEnabled(v);
+                  if (err != null && context.mounted) toast(context, err);
+                },
+              );
+            }),
           ),
           const SizedBox(height: 14),
           const UpdateCard(),

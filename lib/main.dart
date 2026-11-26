@@ -9,15 +9,20 @@ import 'l10n.dart';
 import 'screens/company_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell.dart';
+import 'services/app_lock.dart';
 import 'services/app_state.dart';
+import 'widgets/lock_screen.dart';
 import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await initializeDateFormatting();
-  runApp(ChangeNotifierProvider(
-    create: (_) => AppState(),
+  runApp(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (_) => AppState()),
+      ChangeNotifierProvider(create: (_) => AppLock()),
+    ],
     child: const InvoicerApp(),
   ));
 }
@@ -43,6 +48,7 @@ class InvoicerApp extends StatelessWidget {
       theme: buildTheme(false),
       darkTheme: buildTheme(true),
       themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+      builder: (context, child) => LockOverlay(child: child ?? const SizedBox()),
       home: const AuthGate(),
     );
   }
